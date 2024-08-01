@@ -5,6 +5,7 @@ const app = express();
 
 // app.options('*', cors());
 app.use(cors());
+app.use(express.static('dist'));
 app.use(express.json());
 
 const requestLogger = (req, res, next) => {
