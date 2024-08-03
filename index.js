@@ -1,6 +1,9 @@
+require('dotenv').config();
 const express = require('express');
 const morgan = require('morgan');
 const cors = require('cors');
+const Note = require('./models/note');
+
 const app = express();
 
 // app.options('*', cors());
@@ -51,10 +54,12 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/notes', (req, res) => {
-  res.json(notes);
+  Note.find({}).then(notes => {
+    res.json(notes);
+  })
 });
 
-app.post('/api/notes', (req, res) => {
+app.post('/api/notes', (req, res, next) => {
   const body = req.body;
 
   if (!body.content)
@@ -62,36 +67,44 @@ app.post('/api/notes', (req, res) => {
       error: 'content missing'
     });
 
-  const note = {
-    id: generateId(),
+  const note = new Note({
     content: body.content,
-    importance: Boolean(body.importance) || false
-  }
+    important: Boolean(body.important) || false
+  });
 
-  notes = notes.concat(note);
-  res.json(note);
+  note.save().then(savedNote => {  
+    res.json(savedNote);
+  }).catch(error => next(error));
 })
 
-app.get('/api/notes/:id', (req, res) => {
+app.get('/api/notes/:id', (req, res, next) => {
   const id = req.params.id;
-  const note = notes.find(n => n.id === id);
-  
-  if (note) res.json(note);
-  else res.status(404).end();
+
+  Note.findById(id).then(note => {
+    if (note) res.json(note);
+    else res.status(404).end();
+  }).catch(error => next(error));
 });
 
-app.delete('/api/notes/:id', (req, res) => {
+app.delete('/api/notes/:id', (req, res, next) => {
   const id = req.params.id;
-  notes = notes.filter(n => n.id !== id);
 
-  res.status(204).end();
+  Note.findByIdAndDelete(id).then(result => {
+    res.status(204).end();
+  }).catch(error => next(error));
 });
 
-app.put('/api/notes/:id', (req, res) => {
-  const newNote = req.body;
+app.put('/api/notes/:id', (req, res, next) => {
+  const body = req.body;
 
-  notes = notes.map(n => n.id === newNote.id ? newNote : n);
-  res.json(newNote);
+  const note = {
+    content: body.content,
+    important: body.important
+  }
+
+  Note.findByIdAndUpdate(req.params.id, note, {new: true, runValidators: true, context: 'query'}).then(updatedNote => {
+    res.json(updatedNote);
+  }).catch(error => next(error));
 })
 
 const unknownEndpoint = (req, res) => {
@@ -100,7 +113,18 @@ const unknownEndpoint = (req, res) => {
 
 app.use(unknownEndpoint);
 
-const PORT = process.env.PORT || 3001;
+const errorHandler = (error, req, res, next) => {
+  console.log(error.message);
+
+  if (error.name === 'CastError') return res.status(400).send({error: 'malformatted id'});
+  else if (error.name === 'ValidationError') return res.status(400).send({error: error.message});
+
+  next(error);
+}
+
+app.use(errorHandler);
+
+const PORT = process.env.PORT;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
